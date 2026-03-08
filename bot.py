@@ -1,53 +1,74 @@
 import telebot
 from dotenv import load_dotenv
 import os
+from collections import defaultdict
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 load_dotenv()
-if not os.getenv("OPENROUTER_API_KEY"):
-    load_dotenv(".env.txt")
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    raise SystemExit(
-        "Задай OPENROUTER_API_KEY в .env или .env.txt. Ключ берётся на openrouter.ai"
-    )
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 MODEL_NAME = "z-ai/glm-4.5-air:free"
+MAX_HISTORY_MESSAGES = 20  # сколько последних сообщений диалога помнить
 
 llm = ChatOpenAI(
-    openai_api_key=OPENROUTER_API_KEY,
+    openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     openai_api_base=OPENROUTER_BASE,
-    model=MODEL_NAME,
+    model_name=MODEL_NAME,
 )
 
-# Замените 'bot_token' на токен вашего бота, сохранённого в секрет колаба
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+# история сообщений для каждого чата
+chat_histories = defaultdict(list)
 
-def _format_api_error(err: Exception) -> str:
-    """Понятное сообщение об ошибке API."""
-    s = str(err).lower()
-    if "401" in s or "user not found" in s or "unauthorized" in s:
-        return (
-            "Ошибка доступа к OpenRouter (401). Проверь:\n"
-            "• Ключ OPENROUTER_API_KEY в .env / .env.txt верный и без лишних пробелов\n"
-            "• Аккаунт на openrouter.ai активен, ключ создан в разделе Keys"
-        )
-    if "429" in s or "rate limit" in s:
-        return "Слишком много запросов. Подожди минуту и попробуй снова."
-    return f"Ошибка: {err}. Попробуй позже."
+SYSTEM_PROMPT = (
+    "Ты дружелюбный русскоязычный помощник в Telegram. "
+    "Веди себя как собеседник, помни контекст предыдущих сообщений "
+    "и отвечай кратко и по делу."
+)
+
+
+@bot.message_handler(commands=["start", "help"])
+def handle_start(message):
+    bot.reply_to(
+        message,
+        "Привет! Я ИИ‑бот. Пиши мне сообщения — я буду отвечать, "
+        "помня контекст нашей беседы.",
+    )
 
 
 @bot.message_handler(func=lambda message: True)
 def handle_llm_message(message):
     try:
-        response = llm.invoke(message.text).content
-        bot.reply_to(message, response)
-    except Exception as e:
-        bot.reply_to(message, _format_api_error(e))
+        chat_id = message.chat.id
+        history = chat_histories[chat_id]
 
-# Запуск бота
+        user_msg = HumanMessage(content=message.text)
+        history.append(user_msg)
+
+        messages_for_llm = [SystemMessage(content=SYSTEM_PROMPT)] + history[-MAX_HISTORY_MESSAGES:]
+
+        print(f"[{chat_id}] USER:", message.text)
+
+        response_msg = llm.invoke(messages_for_llm)
+        response_text = response_msg.content
+
+        print(f"[{chat_id}] BOT:", response_text)
+
+        if isinstance(response_msg, AIMessage):
+            history.append(response_msg)
+        else:
+            history.append(AIMessage(content=response_text))
+
+        if len(history) > MAX_HISTORY_MESSAGES:
+            chat_histories[chat_id] = history[-MAX_HISTORY_MESSAGES:]
+
+        bot.reply_to(message, response_text)
+
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка: {str(e)}. Попробуйте позже.")
+
+
 bot.polling()
