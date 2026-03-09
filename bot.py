@@ -1,9 +1,9 @@
 """Telegram-бот: хендлеры и вызов агента."""
 import telebot
 
-from config import settings
-from prompts import WELCOME_MESSAGE
-from run_agent import run_agent
+from app.config import settings
+from app.prompts import WELCOME_MESSAGE
+from app.run_agent import run_agent
 
 bot = telebot.TeleBot(settings.telegram_token)
 

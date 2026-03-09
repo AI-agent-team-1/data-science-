@@ -7,8 +7,8 @@ from typing import Any, List
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from config import settings
-from prompts import SYSTEM_PROMPT
+from app.config import settings
+from app.prompts import SYSTEM_PROMPT
 from rag import (
     build_knowledge_base,
     load_or_build_faiss_index,
