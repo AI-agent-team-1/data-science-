@@ -1,54 +1,39 @@
-"""Запуск агента: RAG + LLM с историей диалога."""
+"""Запуск агента: граф LangGraph с инструментами RAG и веб-поиск."""
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, List
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.config import settings
-from app.prompts import SYSTEM_PROMPT
-from rag import (
-    build_knowledge_base,
-    load_or_build_faiss_index,
-    retrieve_context,
-)
+from app.graph import get_graph
+from app.state import AgentState
 
-llm = ChatOpenAI(
-    openai_api_key=settings.openrouter_api_key,
-    openai_api_base=settings.openrouter_base_url,
-    model_name=settings.model_name,
-)
-
-knowledge_chunks = build_knowledge_base()
-faiss_store = load_or_build_faiss_index(knowledge_chunks)
 chat_histories: dict[int, List[Any]] = defaultdict(list)
 
 
 def run_agent(user_text: str, chat_id: int) -> str:
     history = chat_histories[chat_id]
-    history.append(HumanMessage(content=user_text))
-
-    rag_context = retrieve_context(
-        knowledge_chunks, user_text, vectorstore=faiss_store
-    )
-    messages: List[Any] = [SystemMessage(content=SYSTEM_PROMPT)]
-    if rag_context:
-        messages.append(SystemMessage(content=rag_context))
-    messages.extend(history[-settings.max_history_messages :])
+    messages = list(history)
+    messages.append(HumanMessage(content=user_text))
+    state: AgentState = {"messages": messages}
 
     print(f"[{chat_id}] USER:", user_text)
-    response_msg = llm.invoke(messages)
-    response_text = response_msg.content
-    print(f"[{chat_id}] BOT:", response_text)
+    graph = get_graph()
+    result = graph.invoke(state)
 
-    if isinstance(response_msg, AIMessage):
-        history.append(response_msg)
+    out_messages = result["messages"]
+    if len(out_messages) > settings.max_history_messages:
+        chat_histories[chat_id] = list(out_messages)[-settings.max_history_messages:]
     else:
-        history.append(AIMessage(content=response_text))
+        chat_histories[chat_id] = list(out_messages)
 
-    if len(history) > settings.max_history_messages:
-        chat_histories[chat_id] = history[-settings.max_history_messages :]
+    last = out_messages[-1] if out_messages else None
+    if isinstance(last, AIMessage) and last.content:
+        response_text = last.content if isinstance(last.content, str) else str(last.content)
+    else:
+        response_text = str(last.content) if last and getattr(last, "content", None) else "Не удалось сформировать ответ."
 
+    print(f"[{chat_id}] BOT:", response_text)
     return response_text

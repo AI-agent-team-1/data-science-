@@ -16,6 +16,7 @@ class Settings:
     model_name: str = os.getenv("MODEL_NAME", "z-ai/glm-4.5-air:free")
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     max_history_messages: int = int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
+    tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
 
 
 settings = Settings()
