@@ -1,4 +1,6 @@
-
 .env
 .env.txt
 .env.example
+myenv/
+__pycache__/
+*.pyc
