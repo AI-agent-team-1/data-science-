@@ -1,3 +1,4 @@
 dotenv==0.9.9
 telebot==0.0.5
 langchain_openai
+tavily==1.1.0
