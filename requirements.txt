@@ -1,12 +1,4 @@
-# Telegram
-python-telegram-bot==21.7
-
-# Локальная LLM (клиент к Ollama)
-ollama>=0.4.0
-
-# Переменные окружения
-python-dotenv==1.0.1
-
-pyTelegramBotAPI>=4.0.0
-
-langchain-openai>=0.3.0
+dotenv==0.9.9
+telebot==0.0.5
+langchain_openai
+tavily==1.1.0
