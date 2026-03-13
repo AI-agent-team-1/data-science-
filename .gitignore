@@ -15,3 +15,4 @@ __pycache__/
 .gitattributes
 gitignore.txt
 presentation_info.txt
+rag_faiss_index/
