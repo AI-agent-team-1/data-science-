@@ -1,80 +1,45 @@
 """
-Telegram-бот: приём сообщений, история диалога, вызов LLM (или агента из app).
+Telegram-бот: приём сообщений, вызов агента (app.run_agent) с RAG и web_search.
+Системный промпт и приветствие — в app.prompts.
 """
 import telebot
-from dotenv import load_dotenv
-import os
-from collections import defaultdict
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from telebot.apihelper import ApiTelegramException
 
-load_dotenv()
+from app.config import settings
+from app.prompts import WELCOME_MESSAGE
+from app.run_agent import run_agent
 
-# Подключение к OpenRouter и лимит истории
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-MODEL_NAME = "z-ai/glm-4.5-air:free"
-MAX_HISTORY_MESSAGES = 20  # сколько последних сообщений диалога помнить
+bot = telebot.TeleBot(settings.telegram_token)
 
-llm = ChatOpenAI(
-    openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base=OPENROUTER_BASE,
-    model_name=MODEL_NAME,
-)
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
-
-# история сообщений для каждого чата
-chat_histories = defaultdict(list)
-
-SYSTEM_PROMPT = (
-    "Ты дружелюбный русскоязычный помощник в Telegram. "
-    "Веди себя как собеседник, помни контекст предыдущих сообщений "
-    "и отвечай кратко и по делу."
-)
+def _send_reply(message, text: str) -> bool:
+    """Отправляет ответ. При 403 (пользователь заблокировал бота) логирует и возвращает False."""
+    try:
+        bot.reply_to(message, text)
+        return True
+    except ApiTelegramException as e:
+        if e.error_code == 403 and "blocked by the user" in (e.description or ""):
+            print(f"[{message.chat.id}] Пользователь заблокировал бота, ответ не отправлен.")
+        else:
+            print(f"[{message.chat.id}] Telegram API: {e}")
+        return False
 
 
 @bot.message_handler(commands=["start", "help"])
 def handle_start(message):
-    """Отправляет приветствие на команды /start и /help."""
-    bot.reply_to(
-        message,
-        "Привет! Я ИИ‑бот. Пиши мне сообщения — я буду отвечать, "
-        "помня контекст нашей беседы.",
-    )
+    """Отправляет приветствие из app.prompts."""
+    _send_reply(message, WELCOME_MESSAGE)
 
 
-@bot.message_handler(func=lambda message: True)
-def handle_llm_message(message):
-    """Любое текстовое сообщение: добавляет в историю, вызывает LLM, отправляет ответ."""
+@bot.message_handler(func=lambda m: True)
+def handle_text(message):
+    """Любое сообщение — передаём агенту (граф с rag_search, web_search), отправляем ответ."""
     try:
-        chat_id = message.chat.id
-        history = chat_histories[chat_id]
-
-        user_msg = HumanMessage(content=message.text)
-        history.append(user_msg)
-
-        messages_for_llm = [SystemMessage(content=SYSTEM_PROMPT)] + history[-MAX_HISTORY_MESSAGES:]
-
-        print(f"[{chat_id}] USER:", message.text)
-
-        response_msg = llm.invoke(messages_for_llm)
-        response_text = response_msg.content
-
-        print(f"[{chat_id}] BOT:", response_text)
-
-        if isinstance(response_msg, AIMessage):
-            history.append(response_msg)
-        else:
-            history.append(AIMessage(content=response_text))
-
-        if len(history) > MAX_HISTORY_MESSAGES:
-            chat_histories[chat_id] = history[-MAX_HISTORY_MESSAGES:]
-
-        bot.reply_to(message, response_text)
-
+        answer = run_agent(message.text, message.chat.id)
+        _send_reply(message, answer)
     except Exception as e:
-        bot.reply_to(message, f"Ошибка: {str(e)}. Попробуйте позже.")
+        _send_reply(message, f"Ошибка: {e}. Попробуйте позже.")
 
 
-bot.polling()
+if __name__ == "__main__":
+    bot.infinity_polling()
