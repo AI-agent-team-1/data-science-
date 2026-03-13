@@ -14,4 +14,4 @@ __pycache__/
 # Прочее
 .gitattributes
 gitignore.txt
-rag_faiss_index/
+presentation_info.txt
