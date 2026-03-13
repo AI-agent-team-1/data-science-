@@ -1,5 +1,6 @@
-dotenv == 0.9.9
-telebot == 0.0.5
+dotenv==0.9.9
+telebot==0.0.5
+tavily==1.1.0
 
 
 langchain
