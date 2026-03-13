@@ -1,10 +1,11 @@
-"""RAG: загрузка docs, поиск по FAISS (OpenRouter) или по ключевым словам."""
+"""RAG: загрузка docs (PDF/DOCX), поиск по FAISS (OpenRouter) или по ключевым словам с fallback."""
 import os
 from typing import List, Dict, Any, Optional
 
 from pypdf import PdfReader
 import docx
 
+# Пути и лимиты
 DOCS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "docs"))
 FAISS_INDEX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "rag_faiss_index"))
 MAX_RAG_CONTEXT_CHARS = 6000
@@ -12,6 +13,7 @@ DEFAULT_TOP_K = 10
 OPENROUTER_EMBEDDINGS_BASE = "https://openrouter.ai/api/v1"
 EMBEDDING_MODEL = "openai/text-embedding-3-small"
 
+# Заголовок, который подставляется перед выдержками из базы в контекст LLM
 RAG_HEADER = (
     "Вот выдержки из локальной базы знаний (документы из папки docs). "
     "Отвечай, опираясь прежде всего на них. Если информации недостаточно, "
@@ -20,6 +22,7 @@ RAG_HEADER = (
 
 
 def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
+    """Режет текст на фрагменты заданного размера с перекрытием для RAG."""
     chunks: List[str] = []
     start = 0
     length = len(text)
@@ -34,6 +37,7 @@ def _split_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[s
 
 
 def _load_pdf(path: str) -> str:
+    """Читает PDF-файл, возвращает объединённый текст страниц."""
     try:
         reader = PdfReader(path)
         pages_text = [page.extract_text() or "" for page in reader.pages]
@@ -44,6 +48,7 @@ def _load_pdf(path: str) -> str:
 
 
 def _load_docx(path: str) -> str:
+    """Читает DOCX-файл, возвращает текст параграфов."""
     try:
         document = docx.Document(path)
         return "\n".join(p.text for p in document.paragraphs)
@@ -53,6 +58,7 @@ def _load_docx(path: str) -> str:
 
 
 def _format_context_parts(items: List[tuple[str, str]], limit: int) -> List[str]:
+    """Форматирует список (источник, текст) в блоки для контекста с лимитом по символам."""
     parts = []
     total = 0
     for idx, (source, text) in enumerate(items, start=1):
@@ -65,6 +71,7 @@ def _format_context_parts(items: List[tuple[str, str]], limit: int) -> List[str]
 
 
 def build_knowledge_base(docs_dir: str | None = None) -> List[Dict[str, Any]]:
+    """Обходит папку docs (PDF/DOCX), режет на чанки, возвращает список {text, source}."""
     base_dir = docs_dir or DOCS_DIR
     chunks: List[Dict[str, Any]] = []
     files_added: List[str] = []
@@ -113,6 +120,7 @@ def build_knowledge_base(docs_dir: str | None = None) -> List[Dict[str, Any]]:
 
 
 def get_embeddings():
+    """Создаёт клиент эмбеддингов OpenRouter (для FAISS). При отсутствии ключа — None."""
     try:
         from langchain_openai import OpenAIEmbeddings
         api_key = os.getenv("OPENROUTER_API_KEY")
@@ -132,6 +140,7 @@ def build_faiss_index(
     knowledge_chunks: List[Dict[str, Any]],
     index_path: str = FAISS_INDEX_PATH,
 ) -> Optional[Any]:
+    """Строит FAISS-индекс по чанкам, сохраняет в index_path, возвращает vectorstore."""
     from langchain_community.vectorstores import FAISS
     from langchain_core.documents import Document
 
@@ -155,6 +164,7 @@ def build_faiss_index(
 
 
 def load_faiss_index(index_path: str = FAISS_INDEX_PATH) -> Optional[Any]:
+    """Загружает ранее сохранённый FAISS-индекс с диска."""
     from langchain_community.vectorstores import FAISS
 
     if not os.path.isdir(index_path):
@@ -170,6 +180,7 @@ def load_faiss_index(index_path: str = FAISS_INDEX_PATH) -> Optional[Any]:
 
 
 def load_or_build_faiss_index(knowledge_chunks: List[Dict[str, Any]]) -> Optional[Any]:
+    """Загружает FAISS с диска или строит заново по чанкам."""
     store = load_faiss_index()
     if store is not None:
         print("[RAG] Используется FAISS-индекс (семантический поиск).")
@@ -178,10 +189,12 @@ def load_or_build_faiss_index(knowledge_chunks: List[Dict[str, Any]]) -> Optiona
 
 
 def _normalize_word(w: str) -> str:
+    """Приводит слово к нижнему регистру, оставляет буквы, цифры, дефис и ё."""
     return "".join(c for c in w.lower() if c.isalnum() or c in "ё-")
 
 
 def _score_chunk(query_tokens: List[str], chunk_text: str) -> int:
+    """Оценка релевантности чанка запросу: совпадение слов даёт баллы (fallback без FAISS)."""
     text_lower = chunk_text.lower()
     chunk_words = [_normalize_word(w) for w in text_lower.split() if len(w) > 1]
     score = 0
@@ -199,6 +212,7 @@ def _score_chunk(query_tokens: List[str], chunk_text: str) -> int:
 
 
 def _fallback_chunks(chunks: List[Dict[str, Any]], n: int = 5) -> List[Dict[str, Any]]:
+    """Выбирает до n чанков из разных источников, если по ключевым словам ничего не подошло."""
     seen_sources: set[str] = set()
     result: List[Dict[str, Any]] = []
     for c in chunks:
@@ -221,6 +235,7 @@ def retrieve_context(
     max_chars: int | None = None,
     vectorstore: Optional[Any] = None,
 ) -> str:
+    """Ищет по запросу: при наличии vectorstore — FAISS, иначе по ключевым словам + fallback. Возвращает текст для контекста LLM."""
     k = k if k is not None else DEFAULT_TOP_K
     limit = max_chars or MAX_RAG_CONTEXT_CHARS
 

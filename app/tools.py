@@ -10,14 +10,14 @@ from rag import (
     retrieve_context,
 )
 
-# Инициализация RAG при первом импорте (один раз при старте бота)
+# При первом импорте загружаем базу знаний и FAISS — один раз на процесс
 _knowledge_chunks = build_knowledge_base()
 _faiss_store = load_or_build_faiss_index(_knowledge_chunks)
 
 
 @tool
 def rag_search(query: str) -> str:
-    """Ищет в локальной базе знаний (документы по нефтегазовой тематике). Используй для ответов по регламентам, процедурам и внутренней документации."""
+    """Инструмент для модели: поиск в локальной базе (docs). Возвращает текст выдержек для контекста."""
     return retrieve_context(
         _knowledge_chunks,
         query,
@@ -27,5 +27,5 @@ def rag_search(query: str) -> str:
 
 @tool
 def web_search(query: str) -> str:
-    """Ищет актуальную информацию в интернете. Используй, когда в базе знаний нет ответа или нужны свежие данные."""
+    """Инструмент для модели: веб-поиск через Tavily. Возвращает текст результатов для контекста."""
     return search_web(query, max_results=3)

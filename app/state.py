@@ -7,5 +7,5 @@ from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict):
-    """Сообщения диалога (system, human, assistant, tool). Reducer добавляет новые к списку."""
+    """Состояние графа LangGraph: список сообщений. add_messages объединяет новые с существующими."""
     messages: Annotated[list, add_messages]

@@ -7,6 +7,7 @@ _tavily_client = None
 
 
 def _get_client():
+    """Создаёт и кэширует клиент Tavily при первом вызове (если задан TAVILY_API_KEY)."""
     global _tavily_client
     if _tavily_client is None and settings.tavily_api_key:
         try:
@@ -18,12 +19,12 @@ def _get_client():
 
 
 def search_web(query: str, max_results: int = 3) -> str:
-    """
-    Поиск в интернете через Tavily. Возвращает текст для контекста LLM или пустую строку.
-    """
+    """Поиск в интернете через Tavily. Возвращает отформатированный текст для контекста LLM или сообщение об ошибке."""
     client = _get_client()
-    if not client or not query.strip():
+    if not query.strip():
         return ""
+    if not client:
+        return "[Веб-поиск недоступен: не настроен TAVILY_API_KEY. Ответь по базе знаний или скажи, что актуальных данных из интернета нет.]"
 
     try:
         response = client.search(query, max_results=max_results)
@@ -41,4 +42,4 @@ def search_web(query: str, max_results: int = 3) -> str:
         return header + "\n\n".join(parts)
     except Exception as e:
         print(f"[web_search] Ошибка: {e}")
-        return ""
+        return "[Веб-поиск временно недоступен. Опирайся на базу знаний или скажи пользователю попробовать позже.]"
