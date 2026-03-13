@@ -1,38 +1,105 @@
-# data-science-
-# Telegram LLM Bot
+# 🤖 Telegram-бот с RAG
 
-Простой Telegram-бот, который отправляет сообщения пользователя в LLM через OpenRouter и возвращает ответ.
+**Консультант в нефтегазовой сфере** — технический ассистент, который отвечает только на вопросы в области нефтегазовой тематики. Использует официальную информацию из локальной базы знаний (инструкции, регламенты, СТО и т.п.), не выдумывает факты; при недостатке данных честно сообщает об этом.
 
-## Стек
-- Python
-- pyTelegramBotAPI
-- LangChain
-- OpenRouter API
+Реализован на Python с **RAG** и **агентской логикой на LangGraph**: модель сама решает, когда искать в базе знаний (`rag_search`), когда искать в интернете (`web_search`) и когда дать финальный ответ. Цикл «думай → вызов инструмента → снова думай» повторяется до итогового ответа пользователю.
 
-## Установка
+---
+
+## ✨ Возможности
+
+- 💬 Чат с учётом истории диалога (последние N сообщений).
+- **Агент на LangGraph** с двумя инструментами (tools):
+  - **`rag_search`** — поиск в локальной базе знаний (PDF, DOCX из папки `docs`): семантический поиск (FAISS + эмбеддинги OpenRouter) или fallback по ключевым словам.
+  - **`web_search`** — веб-поиск через Tavily (до 3 результатов на запрос) для актуальной информации.
+- Модель сама выбирает: вызвать RAG, веб-поиск, оба по очереди или сразу ответить; цикл выполняется, пока не будет дан финальный ответ без вызовов инструментов.
+- 📄 База знаний: PDF и DOCX из папки `docs` (при первом запуске строится FAISS-индекс в `rag_faiss_index/`).
+
+---
+
+## 🛠 Стек
+
+- **Python 3.12**
+- **pyTelegramBotAPI** — Telegram Bot API
+- **LangGraph** — граф агента (узлы agent / tools, условные переходы по tool calls)
+- **LangChain** (langchain-openai, langchain-community) — LLM и векторное хранилище
+- **OpenRouter** — чат (модель по умолчанию: `z-ai/glm-4.5-air:free`) и эмбеддинги (`openai/text-embedding-3-small`)
+- **FAISS** (faiss-cpu) — векторный поиск по базе знаний
+- **Tavily** (tavily-python) — веб-поиск для актуальной информации
+- **pypdf**, **python-docx** — чтение документов
+
+---
+
+## 📦 Установка
+
+1. **Клонируйте репозиторий** и перейдите в папку проекта:
+
+   ```bash
+   git clone https://github.com/AI-agent-team-1/data-science-.git
+   cd data-science-
+   ```
+
+2. **Создайте виртуальное окружение** и установите зависимости (обязательно вызывайте `pip` из venv проекта):
+
+   ```bash
+   python -m venv venv
+   .\venv\Scripts\pip.exe install -r requirements.txt
+   ```
+
+3. **Создайте файл `.env`** в корне проекта:
+
+   ```
+   OPENROUTER_API_KEY=ваш_ключ_openrouter
+   TELEGRAM_BOT_TOKEN=токен_бота_от_BotFather
+   TAVILY_API_KEY=ваш_ключ_tavily
+   ```
+
+   🔑 Ключ OpenRouter: [openrouter.ai](https://openrouter.ai)  
+   🤖 Токен бота: [@BotFather](https://t.me/BotFather) в Telegram.  
+   🌐 Ключ Tavily (для веб-поиска): [tavily.com](https://tavily.com) — 1000 бесплатных запросов в месяц.
+
+   Опционально в `.env` можно задать `MODEL_NAME` (по умолчанию `z-ai/glm-4.5-air:free`) и `MAX_HISTORY_MESSAGES` (по умолчанию 20). Модель должна поддерживать **tool calling** (вызов инструментов).
+
+4. **Положите документы** базы знаний в папку **`docs`** (внутри проекта). Поддерживаются форматы **.pdf** и **.docx**.
+
+---
+
+## 🚀 Запуск
 
 ```bash
-git clone https://github.com/yourusername/telegram-llm-bot.git
-cd telegram-llm-bot
-pip install -r requirements.txt
+.\venv\Scripts\python.exe bot.py
+```
+
+При первом запуске бот загрузит документы из `docs`, при наличии ключа OpenRouter построит FAISS-индекс (папка `rag_faiss_index/`) и выведет список загруженных файлов. При следующих запусках индекс подхватывается с диска.
+
+---
+
+## 📁 Структура проекта
 
 ```
-## Настройка
-
-Создайте файл .env:
-```bash
-OPENROUTER_API_KEY=your_openrouter_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+data-science-/
+├── app/
+│   ├── __init__.py
+│   ├── config.py      # Настройки из .env
+│   ├── prompts.py     # Системный промпт и приветствие (роль ассистента)
+│   ├── state.py       # Состояние графа (AgentState с messages)
+│   ├── tools.py       # Инструменты агента: rag_search, web_search (@tool)
+│   ├── graph.py       # Граф LangGraph: agent → tools_condition → tools / конец
+│   ├── run_agent.py   # Вызов графа, история диалога, возврат финального ответа
+│   └── web_search.py  # Веб-поиск через Tavily
+├── bot.py             # Точка входа: Telegram-бот, хендлеры, вызов run_agent
+├── rag.py             # RAG: загрузка docs, FAISS, retrieve_context
+├── docs/              # База знаний (PDF, DOCX)
+├── requirements.txt
+├── .env               # Секреты (не коммитить)
+└── rag_faiss_index/   # Индекс FAISS (создаётся при первом запуске, в .gitignore)
 ```
-Ключ OpenRouter можно получить на https://openrouter.ai
 
-## Запуск
+---
 
-python bot.py
+## 📖 Как устроен агент
 
-## Модель
-
-По умолчанию используется модель:
-z-ai/glm-4.5-air:free
-
-При необходимости можно изменить модель в bot.py.
+- **Граф (LangGraph):** два узла — `agent` (LLM с привязанными tools) и `tools` (ToolNode). После каждого ответа модели проверяется `tools_condition`: если есть вызовы инструментов — переход в `tools`, иначе — конец; после выполнения инструментов управление снова передаётся в `agent`.
+- **Инструменты:** `rag_search(query)` и `web_search(query)` реализованы как LangChain tools; модель сама решает, с каким запросом и когда их вызывать.
+- **RAG:** при старте из `docs` загружаются PDF и DOCX, текст режется на фрагменты; при наличии FAISS-индекса используется семантический поиск (OpenRouter), иначе — поиск по ключевым словам с fallback. Контекст возвращается строкой и подставляется в диалог как результат вызова инструмента.
+- **История:** в state графа передаётся история диалога (и новое сообщение пользователя); после выполнения графа история обновляется и при необходимости обрезается до `MAX_HISTORY_MESSAGES`.
