@@ -3,11 +3,16 @@ Telegram-бот: приём сообщений, вызов агента (app.run
 Системный промпт и приветствие — в app.prompts.
 """
 import telebot
+from telebot import apihelper
 from telebot.apihelper import ApiTelegramException
 
 from app.config import settings
 from app.prompts import WELCOME_MESSAGE
 from app.run_agent import run_agent
+
+# Увеличенные таймауты: при блокировке/медленной сети 15 сек часто не хватает
+apihelper.CONNECT_TIMEOUT = 30
+apihelper.READ_TIMEOUT = 60
 
 bot = telebot.TeleBot(settings.telegram_token)
 
