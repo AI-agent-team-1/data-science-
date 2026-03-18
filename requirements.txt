@@ -1,5 +1,5 @@
-dotenv==0.9.9
-telebot==0.0.5
+python-dotenv
+pyTelegramBotAPI
 tavily==1.1.0
 
 
@@ -8,6 +8,7 @@ langchain-community
 langchain-openai
 langchain-core
 langchain-text-splitters
+langgraph
 
 faiss-cpu
 chromadb

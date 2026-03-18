@@ -10,7 +10,7 @@ from app.config import settings
 from app.prompts import WELCOME_MESSAGE
 from app.run_agent import run_agent
 
-# Увеличенные таймауты: при блокировке/медленной сети 15 сек часто не хватает
+# Увеличенные таймауты: при медленной сети поднимаем CONNECT/READ
 apihelper.CONNECT_TIMEOUT = 30
 apihelper.READ_TIMEOUT = 60
 
@@ -36,10 +36,12 @@ def handle_start(message):
     _send_reply(message, WELCOME_MESSAGE)
 
 
-@bot.message_handler(func=lambda m: True)
+@bot.message_handler(content_types=["text"])
 def handle_text(message):
-    """Любое сообщение — передаём агенту (граф с rag_search, web_search), отправляем ответ."""
+    """Текстовые сообщения передаём агенту (граф с rag_search, web_search), отправляем ответ."""
     try:
+        if not message.text:
+            return
         answer = run_agent(message.text, message.chat.id)
         _send_reply(message, answer)
     except Exception as e:
