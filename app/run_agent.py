@@ -1,8 +1,11 @@
 """Запуск агента: граф LangGraph с инструментами RAG и веб-поиск."""
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import Any, List
+import re
+import threading
+import time
+from collections import OrderedDict, deque
+from typing import Any, Deque, List
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -10,27 +13,73 @@ from app.config import settings
 from app.graph import get_graph
 from app.state import AgentState
 
-# История сообщений по chat_id для многократного диалога
-chat_histories: dict[int, List[Any]] = defaultdict(list)
+#
+# История диалога (TTL + ограничение по числу чатов)
+# - TTL: 24 часа (очистка старых чатов)
+# - Максимум: 100 chat_id (LRU eviction)
+# - Потокобезопасность: сериализуем обновление истории на chat_id уровне
+#
+CHAT_HISTORY_TTL_SECONDS = 24 * 60 * 60
+MAX_CHAT_HISTORIES = 100
+
+# chat_id -> deque(messages), order == LRU
+chat_histories: "OrderedDict[int, Deque[Any]]" = OrderedDict()
+# chat_id -> last_access_timestamp
+chat_last_access: dict[int, float] = {}
+
+# глобальная блокировка для структуры словарей/OrderedDict
+_hist_lock = threading.Lock()
+# пер-чат блокировки (чтобы один chat_id обрабатывался последовательно)
+_chat_locks: dict[int, threading.Lock] = {}
 
 
 def run_agent(user_text: str, chat_id: int) -> str:
     """Запускает граф агента с историей чата, возвращает текст последнего ответа модели."""
-    history = chat_histories[chat_id]
-    messages = list(history)
-    messages.append(HumanMessage(content=user_text))
-    state: AgentState = {"messages": messages}
+    # Гарантируем наличие lock для конкретного chat_id
+    with _hist_lock:
+        lock = _chat_locks.get(chat_id)
+        if lock is None:
+            lock = threading.Lock()
+            _chat_locks[chat_id] = lock
 
-    print(f"[{chat_id}] USER:", user_text)
-    graph = get_graph()
-    result = graph.invoke(state)
+    # Сериализуем обработку одного chat_id (важно для консистентности истории)
+    with lock:
+        now = time.time()
+        with _hist_lock:
+            # Прочистим просроченные чаты и сделаем LRU-ограничение
+            expired = [
+                cid for cid, ts in chat_last_access.items()
+                if now - ts > CHAT_HISTORY_TTL_SECONDS
+            ]
+            for cid in expired:
+                chat_last_access.pop(cid, None)
+                chat_histories.pop(cid, None)
 
-    out_messages = result["messages"]
-    # Обновляем историю и обрезаем по лимиту
-    if len(out_messages) > settings.max_history_messages:
-        chat_histories[chat_id] = list(out_messages)[-settings.max_history_messages:]
-    else:
-        chat_histories[chat_id] = list(out_messages)
+            # Если чата ещё нет — создаём deque с maxlen
+            history = chat_histories.get(chat_id)
+            if history is None:
+                history = deque(maxlen=settings.max_history_messages)
+                chat_histories[chat_id] = history
+
+            # LRU обновление: данный chat_id становится "самым свежим"
+            chat_histories.move_to_end(chat_id, last=True)
+            chat_last_access[chat_id] = now
+
+            messages = list(history)
+            messages.append(HumanMessage(content=user_text))
+
+            # Ограничение по числу чатов (LRU eviction)
+            while len(chat_histories) > MAX_CHAT_HISTORIES:
+                oldest_cid, _ = chat_histories.popitem(last=False)
+                chat_last_access.pop(oldest_cid, None)
+
+        state: AgentState = {"messages": messages}
+
+        print(f"[{chat_id}] USER:", user_text)
+        graph = get_graph()
+        result = graph.invoke(state)
+
+        out_messages = result["messages"]
 
     # Финальный ответ — последнее сообщение ассистента (после всех вызовов инструментов)
     last = out_messages[-1] if out_messages else None
@@ -40,4 +89,48 @@ def run_agent(user_text: str, chat_id: int) -> str:
         response_text = str(last.content) if last and getattr(last, "content", None) else "Не удалось сформировать ответ."
 
     print(f"[{chat_id}] BOT:", response_text)
+
+    # Добавляем источники в конец ответа (deterministic):
+    # - для web_search инструмент уже содержит "Источник: <url>"
+    # - для rag_search мы помечаем источник как "Источник: <doc_name>"
+    sources: list[str] = []
+    seen_sources: set[str] = set()
+    for m in out_messages:
+        content = getattr(m, "content", None)
+        if not isinstance(content, str):
+            continue
+        # Берём все строки вида "Источник: ..." и сохраняем уникальные значения.
+        matches = re.findall(r"(?m)^Источник:\s*(.+)\s*$", content)
+        for s in matches:
+            s = s.strip()
+            if s and s not in seen_sources:
+                seen_sources.add(s)
+                sources.append(s)
+
+    if sources:
+        # Ограничим количество источников, чтобы не раздувать сообщения.
+        sources = sources[:3]
+        response_text = response_text.strip() + "\n\n" + "\n".join(f"Источник: {s}" for s in sources)
+
+    # Обновляем историю под тем же chat_id lock, чтобы не было гонок
+    with _hist_lock:
+        now = time.time()
+        history_deque = chat_histories.get(chat_id)
+        if history_deque is None:
+            history_deque = deque(maxlen=settings.max_history_messages)
+            chat_histories[chat_id] = history_deque
+
+        chat_histories.move_to_end(chat_id, last=True)
+        chat_last_access[chat_id] = now
+
+        # В LangGraph `out_messages` может включать промежуточные сообщения — нам нужна вся цепочка,
+        # но обрезаем её maxlen'ом у deque.
+        history_deque.clear()
+        history_deque.extend(list(out_messages)[-settings.max_history_messages:])
+
+        # Ещё раз ограничим число чатов на всякий случай
+        while len(chat_histories) > MAX_CHAT_HISTORIES:
+            oldest_cid, _ = chat_histories.popitem(last=False)
+            chat_last_access.pop(oldest_cid, None)
+
     return response_text

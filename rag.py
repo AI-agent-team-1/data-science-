@@ -62,7 +62,8 @@ def _format_context_parts(items: List[tuple[str, str]], limit: int) -> List[str]
     parts = []
     total = 0
     for idx, (source, text) in enumerate(items, start=1):
-        part = f"[{idx}] ({source})\n{text}\n"
+        # Явно маркируем источник, чтобы бот мог вывести "Источник: ..." (и для rag_search, и для LLM-контекста).
+        part = f"[{idx}]\nИсточник: {source}\n{text}\n"
         if total + len(part) > limit:
             break
         parts.append(part)
@@ -173,7 +174,9 @@ def load_faiss_index(index_path: str = FAISS_INDEX_PATH) -> Optional[Any]:
     if not embeddings:
         return None
     try:
-        return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+        # Не используем dangerous deserialization: снижает риск,
+        # если индекс повреждён/подменён.
+        return FAISS.load_local(index_path, embeddings)
     except Exception as e:
         print(f"[RAG] Ошибка загрузки FAISS: {e}")
         return None
