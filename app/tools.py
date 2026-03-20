@@ -20,27 +20,19 @@ TOOL_TIMEOUT_SEC = int(os.getenv("TOOL_TIMEOUT_SEC", "20"))
 # Пул потоков для таймаутов инструментов.
 _executor = ThreadPoolExecutor(max_workers=4)
 
-# Ленивая инициализация RAG: запускаем только при первом обращении к rag_search.
-_rag_init_lock = threading.Lock()
-_knowledge_chunks = None
+# Инициализация RAG при старте контейнера (без "ленивой" загрузки).
+# Так мы гарантируем, что после изменений в `docs/` индекс/чанки будут обновлены.
+_init_rag_lock = threading.Lock()
+_knowledge_chunks = []
 _faiss_store = None
 
-
-def _get_rag_resources():
-    """Лениво загружает knowledge_chunks + FAISS store и кэширует в модуле."""
-    global _knowledge_chunks, _faiss_store
-
-    # Если уже инициализировано — просто вернём.
-    if _knowledge_chunks is not None:
-        return _knowledge_chunks, _faiss_store
-
-    with _rag_init_lock:
-        # Проверяем снова, чтобы не инициализировать дважды при гонке.
-        if _knowledge_chunks is None:
-            _knowledge_chunks = build_knowledge_base()
-            _faiss_store = load_or_build_faiss_index(_knowledge_chunks)
-
-    return _knowledge_chunks, _faiss_store
+with _init_rag_lock:
+    try:
+        _knowledge_chunks = build_knowledge_base()
+        _faiss_store = load_or_build_faiss_index(_knowledge_chunks)
+    except Exception as e:
+        # Если на старте не получилось загрузить/построить FAISS, работаем с keyword-fallback.
+        print(f"[RAG] Ошибка инициализации ресурсов: {e}")
 
 
 def _invoke_with_timeout(func, op_name: str, *args, timeout_sec: int = TOOL_TIMEOUT_SEC) -> str:
@@ -60,15 +52,12 @@ def _invoke_with_timeout(func, op_name: str, *args, timeout_sec: int = TOOL_TIME
 @tool
 def rag_search(query: str) -> str:
     """Инструмент для модели: поиск в локальной базе (docs). Возвращает текст выдержек для контекста."""
-    def _impl():
-        knowledge_chunks, faiss_store = _get_rag_resources()
-        return retrieve_context(
-            knowledge_chunks,
-            query,
-            vectorstore=faiss_store,
-        )
-
-    return _invoke_with_timeout(_impl, "rag_search", timeout_sec=TOOL_TIMEOUT_SEC)
+    # Таймаут убран: RAG может долго собираться/искать, особенно после изменения docs.
+    return retrieve_context(
+        _knowledge_chunks,
+        query,
+        vectorstore=_faiss_store,
+    )
 
 
 @tool

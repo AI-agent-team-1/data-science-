@@ -6,6 +6,8 @@ import threading
 import time
 from collections import OrderedDict, deque
 from typing import Any, Deque, List
+from urllib.parse import urlparse
+import html
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -32,9 +34,34 @@ _hist_lock = threading.Lock()
 # пер-чат блокировки (чтобы один chat_id обрабатывался последовательно)
 _chat_locks: dict[int, threading.Lock] = {}
 
+def _format_source(source: str, max_len: int = 80) -> str:
+    """Форматирует источник для HTML-сообщения.
+
+    Для URL делаем короткий текст (например, домен) и сохраняем ссылку полной в href,
+    чтобы Telegram оставался кликабельным на правильный адрес.
+    """
+    s = source.strip()
+    if s.startswith("http://") or s.startswith("https://"):
+        u = urlparse(s)
+        shortened = f"{u.scheme}://{u.netloc}/"
+        # Важно: href оставляем полным URL, чтобы клик вёл на правильный адрес.
+        return (
+            f'<a href="{html.escape(s, quote=True)}">'
+            f'{html.escape(shortened[:max_len], quote=True)}'
+            f"</a>"
+        )
+
+    # Для RAG источник обычно это имя документа
+    if len(s) > max_len:
+        s = s[: max_len - 1] + "…"
+    return html.escape(s, quote=True)
+
 
 def run_agent(user_text: str, chat_id: int) -> str:
-    """Запускает граф агента с историей чата, возвращает текст последнего ответа модели."""
+    """Запускает граф агента с историей чата.
+
+    Возвращает текст последнего ответа модели.
+    """
     # Гарантируем наличие lock для конкретного chat_id
     with _hist_lock:
         lock = _chat_locks.get(chat_id)
@@ -74,6 +101,9 @@ def run_agent(user_text: str, chat_id: int) -> str:
                 chat_last_access.pop(oldest_cid, None)
 
         state: AgentState = {"messages": messages}
+        # Чтобы не брать "источники" из прошлой истории, запоминаем сколько
+        # сообщений мы передали в граф (history + новое HumanMessage).
+        input_messages_len = len(messages)
 
         print(f"[{chat_id}] USER:", user_text)
         graph = get_graph()
@@ -95,7 +125,9 @@ def run_agent(user_text: str, chat_id: int) -> str:
     # - для rag_search мы помечаем источник как "Источник: <doc_name>"
     sources: list[str] = []
     seen_sources: set[str] = set()
-    for m in out_messages:
+    # Парсим только сообщения, которые были добавлены в текущем вызове графа.
+    new_messages = out_messages[input_messages_len:] if isinstance(out_messages, list) else []
+    for m in new_messages:
         content = getattr(m, "content", None)
         if not isinstance(content, str):
             continue
@@ -110,7 +142,13 @@ def run_agent(user_text: str, chat_id: int) -> str:
     if sources:
         # Ограничим количество источников, чтобы не раздувать сообщения.
         sources = sources[:3]
-        response_text = response_text.strip() + "\n\n" + "\n".join(f"Источник: {s}" for s in sources)
+        # Экранируем основной ответ, чтобы в Telegram HTML режиме ничего не ломалось.
+        response_text_plain = html.escape(response_text.strip(), quote=False)
+        response_text = (
+            response_text_plain
+            + "\n\n"
+            + "\n".join(f"Источник: {_format_source(s)}" for s in sources)
+        )
 
     # Обновляем историю под тем же chat_id lock, чтобы не было гонок
     with _hist_lock:

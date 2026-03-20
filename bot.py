@@ -38,7 +38,8 @@ def cleanup_markdown(text: str) -> str:
 def _send_reply(message, text: str) -> bool:
     """Отправляет ответ. При 403 (пользователь заблокировал бота) логирует и возвращает False."""
     try:
-        bot.reply_to(message, text)
+        # Используем HTML mode, чтобы кликабельные ссылки из "Источник:" работали.
+        bot.reply_to(message, text, parse_mode="HTML")
         return True
     except ApiTelegramException as e:
         if e.error_code == 403 and "blocked by the user" in (e.description or ""):
