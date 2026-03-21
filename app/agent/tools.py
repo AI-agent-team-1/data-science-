@@ -8,7 +8,7 @@ import os
 from langchain_core.tools import tool
 
 from app.web_search import search_web
-from rag import (
+from app.rag import (
     build_knowledge_base,
     load_or_build_faiss_index,
     retrieve_context,

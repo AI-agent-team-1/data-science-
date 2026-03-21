@@ -7,9 +7,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.config import settings
-from app.prompts import SYSTEM_PROMPT
-from app.state import AgentState
-from app.tools import rag_search, web_search
+from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.state import AgentState
+from app.agent.tools import rag_search, web_search
 
 TOOLS = [rag_search, web_search]
 

@@ -20,5 +20,18 @@ class Settings:
     tavily_api_key: str = os.getenv("TAVILY_API_KEY", "")
 
 
+@dataclass(frozen=True)
+class RAGSettings:
+    """Настройки RAG: чанкирование, поиск, пути."""
+    chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "1000"))
+    chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
+    top_k: int = int(os.getenv("RAG_TOP_K", "10"))
+    max_context_chars: int = int(os.getenv("RAG_MAX_CONTEXT_CHARS", "6000"))
+    docs_dir: str = os.getenv("RAG_DOCS_DIR", "")
+    faiss_index_path: str = os.getenv("RAG_FAISS_INDEX_PATH", "")
+    embedding_model: str = os.getenv("RAG_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+
+
 # Единственный экземпляр настроек для всего приложения
 settings = Settings()
+rag_settings = RAGSettings()

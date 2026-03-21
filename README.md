@@ -69,13 +69,13 @@
 
 ## 🚀 Запуск
 
-Единственная точка входа — **bot.py** (все настройки и промпты — в `app/`):
+Единственная точка входа — **bot.py** (настройки в `app/config.py`, агент и промпты — в `app/agent/`):
 
 ```bash
 .\venv\Scripts\python.exe bot.py
 ```
 
-На Windows можно также активировать venv (`.\venv\Scripts\Activate.ps1`) и выполнить `python bot.py`.
+На Windows можно также запустить **`scripts\run_bot.ps1`** (поднимает venv и `bot.py`) или активировать venv (`.\venv\Scripts\Activate.ps1`) и выполнить `python bot.py`.
 
 RAG инициализируется **лениво**: индексация/загрузка FAISS начинается при первом вызове `rag_search` (а не при старте модуля).
 FAISS индекс хранится в `rag_faiss_index/` и подхватывается при повторных запусках.
@@ -117,8 +117,8 @@ docker compose stop llm-bot
 Секреты в `.env` **не коммитятся** (лежит на сервере).
 
 ```bash
-chmod +x deploy.sh
-./deploy.sh
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 ```
 
 ---
@@ -130,18 +130,23 @@ LLM_bot/
 ├── app/
 │   ├── __init__.py
 │   ├── config.py      # Настройки из .env
-│   ├── prompts.py     # Системный промпт и приветствие (роль ассистента)
-│   ├── state.py       # Состояние графа (AgentState с messages)
-│   ├── tools.py       # Инструменты агента: rag_search, web_search (@tool)
-│   ├── graph.py       # Граф LangGraph: agent → tools_condition → tools / конец
-│   ├── run_agent.py   # Вызов графа, история диалога, возврат финального ответа
-│   └── web_search.py  # Веб-поиск через Tavily
-├── bot.py             # Точка входа: Telegram-бот, хендлеры, вызов run_agent
-├── rag.py             # RAG: загрузка docs, FAISS, retrieve_context
+│   ├── web_search.py  # Веб-поиск через Tavily
+│   ├── agent/         # Агент LangGraph
+│   │   ├── prompts.py # Системный промпт и приветствие
+│   │   ├── state.py   # AgentState (messages)
+│   │   ├── tools.py   # rag_search, web_search (@tool), инициализация RAG
+│   │   ├── graph.py   # Граф: agent → tools_condition → tools / конец
+│   │   └── run_agent.py  # Вызов графа, история диалога
+│   └── rag/           # RAG: предобработка, индекс, поиск
+├── scripts/
+│   ├── run_bot.ps1    # Запуск бота на Windows (venv + bot.py)
+│   └── deploy.sh      # Деплой на VPS (git pull, docker compose)
+├── bot.py             # Точка входа: Telegram-бот
+├── rag.py             # Реэкспорт app.rag (совместимость)
 ├── docs/              # База знаний (PDF, DOCX)
 ├── requirements.txt
 ├── .env               # Секреты (не коммитить)
-└── rag_faiss_index/   # Индекс FAISS (создаётся при первом запуске, в .gitignore)
+└── rag_faiss_index/   # Индекс FAISS (в .gitignore)
 ```
 
 ---

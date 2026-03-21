@@ -1,6 +1,6 @@
 """
-Telegram-бот: приём сообщений, вызов агента (app.run_agent) с RAG и web_search.
-Системный промпт и приветствие — в app.prompts.
+Telegram-бот: приём сообщений, вызов агента (app.agent.run_agent) с RAG и web_search.
+Системный промпт и приветствие — в app.agent.prompts.
 """
 import telebot
 import re
@@ -8,8 +8,8 @@ from telebot import apihelper
 from telebot.apihelper import ApiTelegramException
 
 from app.config import settings
-from app.prompts import HELP_MESSAGE, WELCOME_MESSAGE
-from app.run_agent import run_agent
+from app.agent.prompts import HELP_MESSAGE, WELCOME_MESSAGE
+from app.agent.run_agent import run_agent
 
 # Увеличенные таймауты: при медленной сети поднимаем CONNECT/READ
 apihelper.CONNECT_TIMEOUT = 30
@@ -51,13 +51,13 @@ def _send_reply(message, text: str) -> bool:
 
 @bot.message_handler(commands=["start"])
 def handle_start(message):
-    """Отправляет приветствие из app.prompts."""
+    """Отправляет приветствие из app.agent.prompts."""
     _send_reply(message, WELCOME_MESSAGE)
 
 
 @bot.message_handler(commands=["help"])
 def handle_help(message):
-    """Отправляет справку из app.prompts."""
+    """Отправляет справку из app.agent.prompts."""
     _send_reply(message, HELP_MESSAGE)
 
 

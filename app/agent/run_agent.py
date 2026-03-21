@@ -12,8 +12,8 @@ import html
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.config import settings
-from app.graph import get_graph
-from app.state import AgentState
+from app.agent.graph import get_graph
+from app.agent.state import AgentState
 
 #
 # История диалога (TTL + ограничение по числу чатов)
