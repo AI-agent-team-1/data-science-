@@ -14,6 +14,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.config import settings
 from app.agent.graph import get_graph
 from app.agent.state import AgentState
+from app.observability.langfuse_tracing import (
+    flush_langfuse,
+    langfuse_graph_invoke_config,
+)
 
 #
 # История диалога (TTL + ограничение по числу чатов)
@@ -107,7 +111,14 @@ def run_agent(user_text: str, chat_id: int) -> str:
 
         print(f"[{chat_id}] USER:", user_text)
         graph = get_graph()
-        result = graph.invoke(state)
+        lf_config = langfuse_graph_invoke_config(chat_id)
+        try:
+            if lf_config:
+                result = graph.invoke(state, config=lf_config)
+            else:
+                result = graph.invoke(state)
+        finally:
+            flush_langfuse()
 
         out_messages = result["messages"]
 

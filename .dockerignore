@@ -1,0 +1,15 @@
+.env
+.env.*
+venv/
+.venv/
+myenv/
+.git/
+.gitignore
+.github/
+__pycache__/
+*.pyc
+*.pyo
+
+# RAG index can be huge; keep it optional.
+rag_faiss_index/
+

@@ -1,0 +1,17 @@
+services:
+  llm-bot:
+    build: .
+    container_name: llm-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./docs:/app/docs
+      - ./rag_faiss_index:/app/rag_faiss_index
+    networks:
+      - llm_shared
+
+# Общая сеть с Langfuse (deploy/langfuse): docker network create llm_shared
+networks:
+  llm_shared:
+    external: true

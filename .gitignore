@@ -1,7 +1,8 @@
 # Токен и секреты
 .env
 .env.txt
-.env.example
+# Пример env можно хранить в git (без секретов)
+!.env.example
 
 # Виртуальное окружение
 venv/
@@ -16,4 +17,9 @@ __pycache__/
 .gitattributes
 gitignore.txt
 presentation_info.txt
+
+# RAG: векторная БД (ChromaDB)
+chroma_db/
+
+# RAG: индекс FAISS (создаётся при первом запуске)
 rag_faiss_index/

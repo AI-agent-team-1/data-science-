@@ -14,6 +14,7 @@
   - **`web_search`** — веб-поиск через Tavily (до 3 результатов на запрос) для актуальной информации.
 - Модель сама выбирает: вызвать RAG, веб-поиск, оба по очереди или сразу ответить; цикл выполняется, пока не будет дан финальный ответ без вызовов инструментов.
 - 📄 База знаний: PDF и DOCX из папки `docs` (FAISS-индекс создаётся/подхватывается при первом вызове `rag_search` в `rag_faiss_index/`).
+- Опционально: **Langfuse** — трейсы запросов (LLM + tools), см. `LangFuse_observability.md` и переменные `LANGFUSE_*` в `.env`.
 
 ---
 
@@ -138,10 +139,13 @@ LLM_bot/
 │   │   ├── graph.py   # Граф: agent → tools_condition → tools / конец
 │   │   └── run_agent.py  # Вызов графа, история диалога
 │   └── rag/           # RAG: предобработка, индекс, поиск
+├── deploy/
+│   └── langfuse/      # Официальный docker-compose Langfuse 3.x (self-host)
 ├── scripts/
 │   ├── run_bot.ps1    # Запуск бота на Windows (venv + bot.py)
 │   └── deploy.sh      # Деплой на VPS (git pull, docker compose)
 ├── bot.py             # Точка входа: Telegram-бот
+├── LangFuse_observability.md  # Langfuse: версии, .env, VPS
 ├── rag.py             # Реэкспорт app.rag (совместимость)
 ├── docs/              # База знаний (PDF, DOCX)
 ├── requirements.txt

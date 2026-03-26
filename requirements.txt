@@ -10,6 +10,8 @@ langchain-core
 langchain-text-splitters
 langgraph
 
+langfuse>=3.0,<4
+
 faiss-cpu
 
 python-docx
