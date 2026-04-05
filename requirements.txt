@@ -1,5 +1,7 @@
 python-dotenv
 pyTelegramBotAPI
+fastapi
+uvicorn[standard]
 tavily==1.1.0
 
 

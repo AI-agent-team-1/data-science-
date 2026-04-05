@@ -25,8 +25,18 @@ fi
 
 mkdir -p docs rag_faiss_index
 
-echo "[deploy] Build & start"
+echo "[deploy] Build & start (Telegram bot + web on :8000)"
 docker compose up -d --build
 
-echo "[deploy] Done. Status:"
-docker ps --filter "name=llm-bot"
+echo "[deploy] Done. Containers:"
+docker ps --filter "name=llm-bot" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+if command -v curl >/dev/null 2>&1; then
+  if out=$(curl -sf --max-time 5 "http://127.0.0.1:8000/api/health"); then
+    echo "[deploy] Web health: $out"
+  else
+    echo "[deploy] WARN: /api/health not reachable yet (wait a few seconds or check logs)" >&2
+  fi
+fi
+
+echo "[deploy] Logs: docker compose logs -f llm-bot"

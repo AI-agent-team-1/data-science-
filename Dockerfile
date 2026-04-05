@@ -14,7 +14,7 @@ COPY . /app
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6️⃣ Команда запуска при старте контейнера
+# 6️⃣ Команда по умолчанию — только Telegram-бот (в docker-compose для VPS переопределяется: бот + веб)
 ENV PYTHONUNBUFFERED=1
 
 # -u: unbuffered output, чтобы print/ошибки попадали в `docker logs`

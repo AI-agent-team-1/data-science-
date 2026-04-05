@@ -1,6 +1,7 @@
 """Запуск агента: граф LangGraph с инструментами RAG и веб-поиск."""
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 import time
@@ -37,6 +38,19 @@ chat_last_access: dict[int, float] = {}
 _hist_lock = threading.Lock()
 # пер-чат блокировки (чтобы один chat_id обрабатывался последовательно)
 _chat_locks: dict[int, threading.Lock] = {}
+
+def session_id_to_chat_id(session_id: str) -> int:
+    """Стабильное целое для веб-сессии (UUID в строке → int для run_agent)."""
+    digest = hashlib.sha256(session_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & 0x7FFFFFFFFFFFFFFF
+
+
+def clear_chat_history(chat_id: int) -> None:
+    """Удаляет историю диалога для данного chat_id (Telegram или веб-сессия)."""
+    with _hist_lock:
+        chat_histories.pop(chat_id, None)
+        chat_last_access.pop(chat_id, None)
+
 
 def _format_source(source: str, max_len: int = 80) -> str:
     """Форматирует источник для HTML-сообщения.
