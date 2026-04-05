@@ -3,10 +3,19 @@
 # In addition, we recommend to restrict inbound traffic on the host to langfuse-web (port 3000) and minio (port 9090) only.
 # All other components are bound to localhost (127.0.0.1) to only accept connections from the local machine.
 # External connections from other machines will not be able to reach these services directly.
+
+# Иначе json-file лог контейнеров (особенно ClickHouse) раздувается до десятков ГБ на маленьком диске.
+x-docker-logging: &docker-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   langfuse-worker:
     image: docker.io/langfuse/langfuse-worker:3
     restart: always
+    logging: *docker-logging
     depends_on: &langfuse-depends-on
       postgres:
         condition: service_healthy
@@ -70,6 +79,7 @@ services:
   langfuse-web:
     image: docker.io/langfuse/langfuse:3
     restart: always
+    logging: *docker-logging
     depends_on: *langfuse-depends-on
     ports:
       - 3000:3000
@@ -110,6 +120,7 @@ services:
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server
     restart: always
+    logging: *docker-logging
     user: "101:101"
     environment:
       CLICKHOUSE_DB: default
@@ -131,6 +142,7 @@ services:
   minio:
     image: cgr.dev/chainguard/minio
     restart: always
+    logging: *docker-logging
     entrypoint: sh
     # create the 'langfuse' bucket before starting the service
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
@@ -152,6 +164,7 @@ services:
   redis:
     image: docker.io/redis:7
     restart: always
+    logging: *docker-logging
     # Тот же пароль, что в command — нужен в env для redis-cli (healthcheck, отладка).
     environment:
       REDIS_AUTH: ${REDIS_AUTH:-myredissecret}
@@ -172,6 +185,7 @@ services:
   postgres:
     image: docker.io/postgres:${POSTGRES_VERSION:-17}
     restart: always
+    logging: *docker-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 3s

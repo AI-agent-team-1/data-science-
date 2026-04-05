@@ -233,10 +233,22 @@
   <script>
     var SESSION_KEY = "llm_bot_web_session_id";
 
+    function randomUUID() {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+      }
+      // HTTP по IP (не secure context) и старые браузеры — randomUUID недоступен
+      return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+        var r = (Math.random() * 16) | 0;
+        var v = c === "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+    }
+
     function getSessionId() {
       var id = localStorage.getItem(SESSION_KEY);
       if (!id) {
-        id = crypto.randomUUID();
+        id = randomUUID();
         localStorage.setItem(SESSION_KEY, id);
       }
       return id;
