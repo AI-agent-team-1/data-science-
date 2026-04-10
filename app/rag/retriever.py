@@ -1,9 +1,12 @@
 """Поиск по RAG: FAISS или keyword-fallback."""
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Optional
 
 from app.config import rag_settings
+
+logger = logging.getLogger(__name__)
 
 RAG_HEADER = (
     "Вот выдержки из локальной базы знаний (документы из папки docs). "
@@ -89,8 +92,8 @@ def retrieve_context(
             parts = _format_context_parts(items, limit)
             if parts:
                 return RAG_HEADER + "\n\n".join(parts)
-        except Exception as e:
-            print(f"[RAG] Ошибка FAISS, fallback на ключевые слова: {e}")
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.warning("[RAG] Ошибка FAISS, fallback на ключевые слова: %s", e, exc_info=True)
 
     if not knowledge_chunks:
         return ""

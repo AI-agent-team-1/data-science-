@@ -1,10 +1,13 @@
 """Эмбеддинги для RAG (OpenRouter API)."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Optional
 
 from app.config import rag_settings
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_EMBEDDINGS_BASE = "https://openrouter.ai/api/v1"
 
@@ -22,6 +25,9 @@ def get_embeddings() -> Optional[Any]:
             openai_api_base=OPENROUTER_EMBEDDINGS_BASE,
             model=rag_settings.embedding_model,
         )
-    except Exception as e:
-        print(f"[RAG] Эмбеддинги недоступны: {e}")
+    except ImportError as e:
+        logger.error("[RAG] langchain_openai недоступен: %s", e)
+        return None
+    except (ValueError, TypeError) as e:
+        logger.error("[RAG] Эмбеддинги не настроены: %s", e, exc_info=True)
         return None

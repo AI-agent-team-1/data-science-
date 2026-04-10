@@ -23,7 +23,7 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-mkdir -p docs rag_faiss_index
+mkdir -p docs rag_faiss_index data
 
 echo "[deploy] Build & start (Telegram bot + web on :8000)"
 docker compose up -d --build

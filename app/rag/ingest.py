@@ -1,11 +1,13 @@
 """Загрузка документов (PDF/DOCX), чанкирование, построение FAISS-индекса."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from pypdf import PdfReader
 import docx
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
@@ -13,6 +15,8 @@ from langchain_community.vectorstores import FAISS
 from app.config import rag_settings
 from app.rag.preprocess import preprocess_text
 from app.rag.embeddings import get_embeddings
+
+logger = logging.getLogger(__name__)
 
 
 def _project_root() -> str:
@@ -38,18 +42,25 @@ def _load_pdf(path: str) -> str:
         reader = PdfReader(path)
         pages_text = [page.extract_text() or "" for page in reader.pages]
         return "\n".join(pages_text)
-    except Exception as e:
-        print(f"[RAG] Ошибка чтения PDF {path}: {e}")
+    except PdfReadError as e:
+        logger.error("[RAG] Ошибка чтения PDF %s: %s", path, e, exc_info=True)
+        return ""
+    except OSError as e:
+        logger.error("[RAG] Файл PDF недоступен %s: %s", path, e, exc_info=True)
         return ""
 
 
 def _load_docx(path: str) -> str:
-    """Читает DOCX-файл, возвращает текст параграфов."""
+    """Читает DOCX: параграфы и текст из таблиц."""
     try:
         document = docx.Document(path)
-        return "\n".join(p.text for p in document.paragraphs)
-    except Exception as e:
-        print(f"[RAG] Ошибка чтения DOCX {path}: {e}")
+        parts: List[str] = [p.text for p in document.paragraphs]
+        for table in document.tables:
+            for row in table.rows:
+                parts.append(" | ".join(cell.text for cell in row.cells))
+        return "\n".join(parts)
+    except (OSError, ValueError, KeyError) as e:
+        logger.error("[RAG] Ошибка чтения DOCX %s: %s", path, e, exc_info=True)
         return ""
 
 
@@ -73,7 +84,7 @@ def build_knowledge_base(docs_dir: str | None = None) -> List[Dict[str, Any]]:
     files_failed: List[str] = []
 
     if not os.path.isdir(base_dir):
-        print(f"[RAG] Папка с базой знаний не найдена: {base_dir}")
+        logger.warning("[RAG] Папка с базой знаний не найдена: %s", base_dir)
         return chunks
 
     splitter = _create_splitter()
@@ -107,13 +118,13 @@ def build_knowledge_base(docs_dir: str | None = None) -> List[Dict[str, Any]]:
                 if part.strip():
                     chunks.append({"text": part.strip(), "source": name})
 
-    print(f"[RAG] Добавлено в базу знаний: {len(files_added)} файлов, {len(chunks)} фрагментов.")
+    logger.info("[RAG] Добавлено в базу знаний: %s файлов, %s фрагментов.", len(files_added), len(chunks))
     for name in files_added:
-        print(f"  — {name}")
+        logger.info("  — %s", name)
     if files_skipped:
-        print(f"[RAG] Пропущено (формат не поддерживается): {len(files_skipped)} — {', '.join(files_skipped)}")
+        logger.info("[RAG] Пропущено (формат не поддерживается): %s — %s", len(files_skipped), ", ".join(files_skipped))
     if files_failed:
-        print(f"[RAG] Не загружено (ошибка или пустой текст): {len(files_failed)} — {', '.join(files_failed)}")
+        logger.warning("[RAG] Не загружено (ошибка или пустой текст): %s — %s", len(files_failed), ", ".join(files_failed))
     return chunks
 
 
@@ -131,14 +142,14 @@ def build_faiss_index(
         Document(page_content=c["text"], metadata={"source": c["source"]})
         for c in knowledge_chunks
     ]
-    print("[RAG] Построение FAISS-индекса (эмбеддинги через OpenRouter)...")
+    logger.info("[RAG] Построение FAISS-индекса (эмбеддинги через OpenRouter)...")
     try:
         vectorstore = FAISS.from_documents(docs, embeddings)
         vectorstore.save_local(path)
-        print(f"[RAG] FAISS-индекс сохранён: {path}")
+        logger.info("[RAG] FAISS-индекс сохранён: %s", path)
         return vectorstore
-    except Exception as e:
-        print(f"[RAG] Ошибка построения FAISS: {e}")
+    except (OSError, ValueError) as e:
+        logger.error("[RAG] Ошибка построения FAISS: %s", e, exc_info=True)
         return None
 
 
@@ -156,8 +167,8 @@ def load_faiss_index(index_path: str | None = None) -> Optional[Any]:
             embeddings,
             allow_dangerous_deserialization=True,
         )
-    except Exception as e:
-        print(f"[RAG] Ошибка загрузки FAISS: {e}")
+    except (OSError, ValueError, KeyError) as e:
+        logger.error("[RAG] Ошибка загрузки FAISS: %s", e, exc_info=True)
         return None
 
 
@@ -165,6 +176,6 @@ def load_or_build_faiss_index(knowledge_chunks: List[Dict[str, Any]]) -> Optiona
     """Загружает FAISS с диска или строит заново по чанкам."""
     store = load_faiss_index()
     if store is not None:
-        print("[RAG] Используется FAISS-индекс (семантический поиск).")
+        logger.info("[RAG] Используется FAISS-индекс (семантический поиск).")
         return store
     return build_faiss_index(knowledge_chunks)

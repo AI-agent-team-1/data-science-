@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -18,10 +19,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.config import validate_required_for_agent
+from app.agent.tools import init_rag
+from app.chat_history_sqlite import init_schema
 from app.agent.run_agent import clear_chat_history, run_agent, session_id_to_chat_id
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    validate_required_for_agent()
+    init_schema()
+    init_rag()
+    logger.info("RAG и SQLite истории инициализированы до приёма запросов.")
+    yield
 
 
 class ChatRequest(BaseModel):
@@ -42,6 +58,7 @@ app = FastAPI(
     title="LLM Bot Web",
     description="Чат с агентом (LangGraph + RAG + web search)",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -63,9 +80,9 @@ def chat(req: ChatRequest):
     logger.info("POST /api/chat  session=%s  chat_id=%s  len=%d", req.session_id, chat_id, len(req.message))
     try:
         reply = run_agent(req.message, chat_id=chat_id)
-    except Exception:
-        logger.exception("run_agent failed")
-        raise HTTPException(status_code=500, detail="Ошибка обработки запроса") from None
+    except Exception as e:
+        logger.exception("run_agent failed: %s", e)
+        raise HTTPException(status_code=500, detail="Ошибка обработки запроса") from e
     return ChatResponse(reply=reply, session_id=req.session_id)
 
 

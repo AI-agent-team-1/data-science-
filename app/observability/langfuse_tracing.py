@@ -1,6 +1,7 @@
 """Langfuse: CallbackHandler для LangGraph + flush. Один запрос пользователя — один handler."""
 from __future__ import annotations
 
+import logging
 import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
@@ -8,6 +9,8 @@ from uuid import uuid4
 
 from app.config import settings
 from app.observability.sanitize import hash_user_id, langfuse_mask
+
+logger = logging.getLogger(__name__)
 
 _init_lock = threading.Lock()
 _client_ready = False
@@ -58,7 +61,9 @@ def langfuse_graph_invoke_config(chat_id: int) -> Optional[Dict[str, Any]]:
     try:
         from langfuse.langchain import CallbackHandler
     except ImportError:
-        print("[langfuse] Пакет langfuse не установлен. Установите: pip install 'langfuse>=3,<4'")
+        logger.warning(
+            "[langfuse] Пакет langfuse не установлен. Установите: pip install 'langfuse>=3,<4'"
+        )
         return None
 
     trace_id = uuid4().hex
@@ -130,4 +135,4 @@ def flush_langfuse() -> None:
     try:
         get_client(public_key=settings.langfuse_public_key.strip()).flush()
     except Exception as e:
-        print(f"[langfuse] flush: {e}")
+        logger.warning("[langfuse] flush: %s", e, exc_info=True)

@@ -48,6 +48,23 @@ class RAGSettings:
 settings = Settings()
 rag_settings = RAGSettings()
 
+
+def validate_required_for_agent() -> None:
+    """Проверка переменных, нужных агенту (Telegram и веб)."""
+    if not settings.openrouter_api_key or not str(settings.openrouter_api_key).strip():
+        raise RuntimeError(
+            "OPENROUTER_API_KEY не задан или пуст. Укажите ключ в .env (см. env.example)."
+        )
+
+
+def validate_required_for_telegram_bot() -> None:
+    """Проверка перед запуском Telegram-бота."""
+    validate_required_for_agent()
+    if not settings.telegram_token or not str(settings.telegram_token).strip():
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN не задан или пуст. Укажите токен бота в .env (см. env.example)."
+        )
+
 # Langfuse SDK читает ключи и host только из os.environ; подставляем дефолты из Settings.
 if settings.langfuse_enabled:
     os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)

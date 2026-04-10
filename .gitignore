@@ -23,3 +23,6 @@ chroma_db/
 
 # RAG: индекс FAISS (создаётся при первом запуске)
 rag_faiss_index/
+
+# SQLite история чатов (локально; на VPS обычно в томе data/)
+data/

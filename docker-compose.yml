@@ -19,9 +19,12 @@ services:
         max-file: "3"
     env_file:
       - .env
+    environment:
+      CHAT_HISTORY_DB: /app/data/chat_history.db
     volumes:
       - ./docs:/app/docs
       - ./rag_faiss_index:/app/rag_faiss_index
+      - ./data:/app/data
     networks:
       - llm_shared
 

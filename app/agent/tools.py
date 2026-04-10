@@ -1,9 +1,10 @@
 """Инструменты агента: RAG и веб-поиск (LangChain tools для LangGraph)."""
 from __future__ import annotations
 
+import logging
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-import os
 
 from langchain_core.tools import tool
 
@@ -14,49 +15,68 @@ from app.rag import (
     retrieve_context,
 )
 
-# Таймаут на выполнение tool-функций (чтобы модель не зависала/не разгоняла сеть).
+logger = logging.getLogger(__name__)
+
 TOOL_TIMEOUT_SEC = int(os.getenv("TOOL_TIMEOUT_SEC", "20"))
 
-# Пул потоков для таймаутов инструментов.
 _executor = ThreadPoolExecutor(max_workers=4)
 
-# Инициализация RAG при старте контейнера (без "ленивой" загрузки).
-# Так мы гарантируем, что после изменений в `docs/` индекс/чанки будут обновлены.
 _init_rag_lock = threading.Lock()
-_knowledge_chunks = []
+_rag_initialized = False
+_knowledge_chunks: list = []
 _faiss_store = None
 
-with _init_rag_lock:
-    try:
-        _knowledge_chunks = build_knowledge_base()
-        _faiss_store = load_or_build_faiss_index(_knowledge_chunks)
-    except Exception as e:
-        # Если на старте не получилось загрузить/построить FAISS, работаем с keyword-fallback.
-        print(f"[RAG] Ошибка инициализации ресурсов: {e}")
+
+def init_rag() -> None:
+    """Явная загрузка базы знаний и FAISS. Вызывать до первого запроса (bot / FastAPI lifespan)."""
+    global _rag_initialized, _knowledge_chunks, _faiss_store
+    with _init_rag_lock:
+        if _rag_initialized:
+            return
+        try:
+            _knowledge_chunks = build_knowledge_base()
+            _faiss_store = load_or_build_faiss_index(_knowledge_chunks)
+        except OSError as e:
+            logger.error("[RAG] Ошибка инициализации (файлы/диск): %s", e, exc_info=True)
+            _knowledge_chunks = []
+            _faiss_store = None
+        except Exception as e:
+            logger.exception("[RAG] Ошибка инициализации ресурсов: %s", e)
+            _knowledge_chunks = []
+            _faiss_store = None
+        _rag_initialized = True
 
 
 def _invoke_with_timeout(func, op_name: str, *args, timeout_sec: int = TOOL_TIMEOUT_SEC) -> str:
-    """Выполняет функцию в отдельном потоке и ограничивает по времени."""
     future = _executor.submit(func, *args)
     try:
         result = future.result(timeout=timeout_sec)
         return result if isinstance(result, str) else str(result)
     except FuturesTimeoutError:
-        print(f"[tools] {op_name} timed out after {timeout_sec}s")
+        logger.warning("[tools] %s timed out after %ss", op_name, timeout_sec)
         return ""
-    except Exception as e:
-        print(f"[tools] {op_name} failed: {e}")
+    except (OSError, ValueError, RuntimeError) as e:
+        logger.warning("[tools] %s failed: %s", op_name, e, exc_info=True)
         return ""
+
+
+def _rag_retrieve(query: str) -> str:
+    return retrieve_context(
+        _knowledge_chunks,
+        query,
+        vectorstore=_faiss_store,
+    )
 
 
 @tool
 def rag_search(query: str) -> str:
     """Инструмент для модели: поиск в локальной базе (docs). Возвращает текст выдержек для контекста."""
-    # Таймаут убран: RAG может долго собираться/искать, особенно после изменения docs.
-    return retrieve_context(
-        _knowledge_chunks,
-        query,
-        vectorstore=_faiss_store,
+    if not _rag_initialized:
+        init_rag()
+    return _invoke_with_timeout(
+        lambda: _rag_retrieve(query),
+        "rag_search",
+        timeout_sec=TOOL_TIMEOUT_SEC,
     )
 
 
