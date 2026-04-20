@@ -16,6 +16,7 @@ from app.agent.prompts import HELP_MESSAGE, WELCOME_MESSAGE
 from app.agent.run_agent import clear_chat_history, run_agent
 from app.agent.tools import init_rag
 from app.chat_history_sqlite import init_schema
+from app.guardrails_ai import guard_input, guard_output
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,7 +87,14 @@ def handle_text(message):
     try:
         if not message.text:
             return
+        input_check = guard_input(message.text)
+        if not input_check.allowed:
+            _send_reply(message, input_check.text or "")
+            return
         answer = run_agent(message.text, message.chat.id)
+        output_check = guard_output(answer)
+        if not output_check.allowed:
+            answer = output_check.text or ""
         _send_reply(message, cleanup_markdown(answer))
     except Exception:
         logger.exception("[bot] handle_text failed")

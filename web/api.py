@@ -23,6 +23,7 @@ from app.config import validate_required_for_agent
 from app.agent.tools import init_rag
 from app.chat_history_sqlite import init_schema
 from app.agent.run_agent import clear_chat_history, run_agent, session_id_to_chat_id
+from app.guardrails_ai import guard_input, guard_output
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,11 +79,29 @@ def health():
 def chat(req: ChatRequest):
     chat_id = session_id_to_chat_id(req.session_id)
     logger.info("POST /api/chat  session=%s  chat_id=%s  len=%d", req.session_id, chat_id, len(req.message))
+    input_check = guard_input(req.message)
+    if not input_check.allowed:
+        logger.info(
+            "Guardrails blocked input  session=%s chat_id=%s reason=%s",
+            req.session_id,
+            chat_id,
+            input_check.reason,
+        )
+        return ChatResponse(reply=input_check.text or "", session_id=req.session_id)
     try:
         reply = run_agent(req.message, chat_id=chat_id)
     except Exception as e:
         logger.exception("run_agent failed: %s", e)
         raise HTTPException(status_code=500, detail="Ошибка обработки запроса") from e
+    output_check = guard_output(reply)
+    if not output_check.allowed:
+        logger.info(
+            "Guardrails blocked output session=%s chat_id=%s reason=%s",
+            req.session_id,
+            chat_id,
+            output_check.reason,
+        )
+        reply = output_check.text or ""
     return ChatResponse(reply=reply, session_id=req.session_id)
 
 
